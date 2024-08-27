@@ -8,10 +8,10 @@
 //---------------------Librerías---------------------
 #include <Arduino.h> // Librería Arduino
 #include <AdafruitIO_WiFi.h> // Librería Adafruit con WiFi
-#include <driver/ledc.h> // Librería ledc no creo que sea necesaria
+#include <driver/ledc.h> // Librería ledc
 
 //---------------------Pines---------------------
-#define TEMPERATURE_PIN 12
+#define TEMPERATURE_PIN 36
 #define BUTTON_PIN 13
 
 #define RED_PIN 5
@@ -35,13 +35,14 @@ bool showTemp = false;
 const unsigned long DISPLAY_DURATION = 5000;
 int digits[3] = {0, 0, 0};
 
-//---------------------Configuración Adafruit---------------------
-//#define IO_USERNAME "CamilaSantiago"
-//#define IO_KEY "aio_SFba62VRWT0UA18NSMapKOXBrSyR"
-//#define WIFI_SSID "Camila"
-//#define WIFI_PASS "camila09"
-//AdafruitIO_WiFi io(IO_USERNAME, IO_KEY, WIFI_SSID, WIFI_PASS);
-//AdafruitIO_Feed *temperatureFeed = io.feed("temperature");
+// Configuración Adafruit IO
+#define IO_USERNAME "CamilaSantiago"
+#define IO_KEY "aio_rkKN99GI5KXzgUFGHIPmMJhfOhfZ"
+#define WIFI_SSID "iPhone de Marcela"
+#define WIFI_PASS "marce2003"
+AdafruitIO_WiFi io(IO_USERNAME, IO_KEY, WIFI_SSID, WIFI_PASS);
+AdafruitIO_Feed *temperatureFeed = io.feed("TEMP");
+AdafruitIO_Feed *semaphoreFeed = io.feed("RELOJ");
 
 //---------------------Mapa de los displays---------------------
 // Mapa de segmentos para mostrar números del 0-9 en el display de 7 segmentos
@@ -78,11 +79,11 @@ void updateLedColor(float t) {
   if(t < 37.0) {
     ledcWrite(9, 1023); // Verde
     ledcWrite(8, 0);    // Rojo
-    ledcWrite(10,0);   // Amarillo
+    ledcWrite(10, 0);   // Amarillo
   } else if(t < 37.5) {
     ledcWrite(9, 0); // Verde
     ledcWrite(8, 0);    // Rojo
-    ledcWrite(10,1023);   // Amarillo
+    ledcWrite(10, 1023);   // Amarillo
   } else {
     ledcWrite(9, 0); // Verde
     ledcWrite(8, 1023);    // Rojo
@@ -107,7 +108,7 @@ void displayDigit(int digit, int sel) {
   for (int i = 0; i < 7; i++) {
     digitalWrite(segmentPins[i], digitMap[digit][i]);
   }
-  delay(1);
+  delay(5);
   digitalWrite(displaySelect[sel], LOW);
 }
 
@@ -150,21 +151,45 @@ void setup() {
   
   Serial.begin(115200);
   attachInterrupt(BUTTON_PIN, BUTTON_ISR, RISING);
+
+  // Conectar a Adafruit IO
+  Serial.print("Connecting to Adafruit IO");
+  io.connect();
+  while(io.status() < AIO_CONNECTED) {
+    Serial.print(".");
+    delay(500);
+  }
+  Serial.println();
+  Serial.println(io.statusText());
 }
 
 //---------------------Loop---------------------/
 void loop() {
+  io.run();
+
   if (button.pressed != button.laststate) {
     if (button.pressed) {
       temp = analogRead(TEMPERATURE_PIN) * ((3.3 / 4095.0) * 100) + 25;
-      Serial.print(temp);
-      Serial.print("\n");
+      Serial.print("Temperatura: ");
+      Serial.println(temp);
       
       updateLedColor(temp);
       updateServo(temp);
       
       showTemp = true;
       lastReadTime = millis();
+      
+      // Enviar datos a Adafruit IO
+      temperatureFeed->save(temp);
+      String color;
+      if (temp < 37.0) {
+        color = "#00ff00"; // Verde
+      } else if (temp < 37.5) {
+        color = "#ffff00"; // Amarillo
+      } else {
+        color = "#ff0000"; // Rojo
+      }
+      semaphoreFeed->save(color);
       
       button.pressed = false;
     }
