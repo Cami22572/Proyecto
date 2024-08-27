@@ -5,39 +5,37 @@
 // Micro: ESP32 DEV Kit 1.0
 // Sensor de temperatura, con leds indicadoras, displays que muestran el valor y servo que gira dependiendo del estado
 
-/*---------------------Librerías---------------------*/
-#include <Arduino.h> //Libreria Arduino
-#include <AdafruitIO_WiFi.h> //Libreria Adafruit con WIFI
-#include <driver/ledc.h> //Libreria ledc no creo que sea necesaria
-#include <ESP32Servo.h> // Librería para controlar Servo en el ESP32
+//---------------------Librerías---------------------
+#include <Arduino.h> // Librería Arduino
+#include <AdafruitIO_WiFi.h> // Librería Adafruit con WiFi
+#include <driver/ledc.h> // Librería ledc no creo que sea necesaria
 
-/*---------------------Pines---------------------*/
-#define TEMPERATURE_PIN 14 // bien
-#define BUTTON_PIN 13 // 11 Cambiar por el 15 nt
+//---------------------Pines---------------------
+#define TEMPERATURE_PIN 12
+#define BUTTON_PIN 13
 
-#define RED_PIN 5 // 5
-#define YELLOW_PIN 16 // 16
-#define GREEN_PIN 9 // 2
+#define RED_PIN 5
+#define YELLOW_PIN 16
+#define GREEN_PIN 14
 
-#define SERVO_PIN 23 //Cambiar por el 17
-#define PWM_FREQ 50 //Frecuencia del PWM del servo
-#define PWM_RES 10 //Resolución del PWM (10 bits equivalente a 0-1023) //Yo lo cambiaría por 8 xd Cambiar
+#define SERVO_PIN 23
+#define PWM_FREQ 50
+#define PWM_RES 10
 
 // Pines para los displays de 7 segmentos
 int segmentPins[7] = {25, 33, 21, 17, 22, 26, 27}; // Pines que controlan cada segmento del display
-//Cambiar por los que si son xD yo creo que tenés otros pines conectados xd según tu excel
 
-/*---------------------Variables---------------------*/
-// Variables globales
-Servo myServo; //Servo 
-float temp = 0.0; //Temperatura
-unsigned long lastReadTime = 0; // Tiempo desde la última lectura 
-bool showTemp = false; //Mostar o no la temperatura
-const unsigned long DISPLAY_DURATION = 5000; //Duración de los displays
-int digits[3] = {0, 0, 0}; //Digitos de la temperaatura (centenas, decenas y unidades)
-int displaySelect[3] = {32, 18, 19}; //Transistores de los displays
+// Pines para seleccionar cada dígito del display
+int displaySelect[3] = {32, 18, 19}; // Pines que controlan los dígitos de los displays
 
-/*---------------------Configuración Adafruit---------------------*/
+//---------------------Variables---------------------
+float temp = 0.0;
+unsigned long lastReadTime = 0;
+bool showTemp = false;
+const unsigned long DISPLAY_DURATION = 5000;
+int digits[3] = {0, 0, 0};
+
+//---------------------Configuración Adafruit---------------------
 //#define IO_USERNAME "CamilaSantiago"
 //#define IO_KEY "aio_SFba62VRWT0UA18NSMapKOXBrSyR"
 //#define WIFI_SSID "Camila"
@@ -45,23 +43,22 @@ int displaySelect[3] = {32, 18, 19}; //Transistores de los displays
 //AdafruitIO_WiFi io(IO_USERNAME, IO_KEY, WIFI_SSID, WIFI_PASS);
 //AdafruitIO_Feed *temperatureFeed = io.feed("temperature");
 
-/*---------------------Mapa de los display---------------------*/
+//---------------------Mapa de los displays---------------------
 // Mapa de segmentos para mostrar números del 0-9 en el display de 7 segmentos
-byte digitMap[10] = {
-  0b11111100,
-  0b01100000,
-  0b11011010,
-  0b11110010,
-  0b01100110,
-  0b10110110,
-  0b10111110,
-  0b11100000,
-  0b11111110,
-  0b11110110
+const int digitMap[10][7] = {
+  {0, 0, 0, 0, 0, 0, 1},  // 0
+  {1, 0, 0, 1, 1, 1, 1},  // 1
+  {0, 0, 1, 0, 0, 1, 0},  // 2
+  {0, 0, 0, 0, 1, 1, 0},  // 3
+  {1, 0, 0, 1, 1, 0, 0},  // 4
+  {0, 1, 0, 0, 1, 0, 0},  // 5
+  {0, 1, 0, 0, 0, 0, 0},  // 6
+  {0, 0, 0, 1, 1, 1, 1},  // 7
+  {0, 0, 0, 0, 0, 0, 0},  // 8
+  {0, 0, 0, 0, 1, 0, 0}   // 9
 };
 
-/*---------------------Interrupción del botón---------------------*/
-//Definición del botón
+//---------------------Interrupción del botón---------------------
 portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 struct Button {
   const uint8_t PIN;
@@ -70,14 +67,13 @@ struct Button {
 };
 Button button = {BUTTON_PIN, false, false};
 
-// Función de interrupción del botón
 void IRAM_ATTR BUTTON_ISR() {
   portENTER_CRITICAL_ISR(&mux);
   button.pressed = true;
   portEXIT_CRITICAL_ISR(&mux);
 }
-/*---------------------Control del LEDs---------------------*/
-// Función para actualizar el color del LED según la temperatura
+
+//---------------------Control del LEDs---------------------/
 void updateLedColor(float t) {
   if(t < 37.0) {
     ledcWrite(9, 1023); // Verde
@@ -93,114 +89,92 @@ void updateLedColor(float t) {
     ledcWrite(10, 0);   // Amarillo
   }
 }
-/*---------------------Control del Servo---------------------*/
-// Función para mover el servo según la temperatura
+
+//---------------------Control del Servo---------------------/
 void updateServo(float t) {
-  int angle = map(t, 0, 50, 0, 180);
-  myServo.write(angle);
-}
-/*---------------------Función de digitos de los displays---------------------*/
-// Función para mostrar un dígito en el display de 7 segmentos
-void displayDigit(int digit, int sel) {
-  digitalWrite(displaySelect[sel], 1);
-  for (int i = 0; i < 7; i++) {
-    digitalWrite(segmentPins[i], (digitMap[digit] >> i) & 0x01);
+  if(t < 37.0) {
+    ledcWrite(0, 128); // Verde
+  } else if(t < 37.5) {
+    ledcWrite(0, 77); // Amarillo
+  } else {
+    ledcWrite(0, 26); // Rojo
   }
-  digitalWrite(displaySelect[sel], 0);
-  delay(10);
 }
-/*---------------------Mostrar temperatura en displays---------------------*/
-// Función para mostrar la temperatura en el display de 7 segmentos
+
+//---------------------Función de digitos de los displays---------------------/
+void displayDigit(int digit, int sel) {
+  digitalWrite(displaySelect[sel], HIGH);
+  for (int i = 0; i < 7; i++) {
+    digitalWrite(segmentPins[i], digitMap[digit][i]);
+  }
+  delay(1);
+  digitalWrite(displaySelect[sel], LOW);
+}
+
+//---------------------Mostrar temperatura en displays---------------------/
 void displayTemperature(float temperature) {
   int tempInt = int(temperature * 10);
-  digits[0] = tempInt / 100;
-  digits[1] = (tempInt / 10) % 10;
-  digits[2] = tempInt % 10;
-  
+  digits[0] = tempInt / 100; 
+  digits[1] = (tempInt / 10) % 10; 
+  digits[2] = tempInt % 10; 
+
   for (int i = 0; i < 3; i++) {
     displayDigit(digits[i], i);
-    delay(500);
   }
 }
 
-// Función para apagar el display
-void clearDisplay() {
-  for (int i = 0; i < 7; i++) {
-    digitalWrite(segmentPins[i], LOW);
-  }
-}
-
-/*---------------------Configuración PWM---------------------*/
-// Funciones para configurar PWM
+//---------------------Configuración PWM---------------------/
 void initLedc(uint8_t pin, int channel) {
   ledcSetup(channel, PWM_FREQ, PWM_RES);
   ledcAttachPin(pin, channel);
   ledcWrite(channel, 0);
 }
-/*---------------------Setup---------------------*/
+
+//---------------------Setup---------------------/
 void setup() {
-  // Configura pines y PWM
   pinMode(TEMPERATURE_PIN, INPUT);
   pinMode(BUTTON_PIN, INPUT_PULLUP);
   initLedc(RED_PIN, 8);
   initLedc(GREEN_PIN, 9);
   initLedc(YELLOW_PIN, 10);
   initLedc(SERVO_PIN, 0);
-  pinMode(displaySelect[0], OUTPUT);
-  pinMode(displaySelect[1], OUTPUT);
-  pinMode(displaySelect[2], OUTPUT);
   
-  // Configura el servo
-  myServo.attach(SERVO_PIN);
+  for(int i = 0; i < 7; i++) {
+    pinMode(segmentPins[i], OUTPUT);
+  }
   
-  // Configura comunicación serial y Adafruit IO
-  Serial.begin(115200); //Verificar si es 115200 o 9600 xd
-  //io.connect();
-  //while (io.status() < AIO_CONNECTED) 
-  /*{
-  Serial.print(".");
-  delay(500);
-  }*/
-  //Serial.println();
-  //Serial.println(io.statusText());
-
-  // Configura interrupción del botón
+  for(int i = 0; i < 3; i++) {
+    pinMode(displaySelect[i], OUTPUT);
+    digitalWrite(displaySelect[i], LOW);
+  }
+  
+  Serial.begin(115200);
   attachInterrupt(BUTTON_PIN, BUTTON_ISR, RISING);
 }
-/*---------------------Loop---------------------*/
+
+//---------------------Loop---------------------/
 void loop() {
-  // io.run();
-  
   if (button.pressed != button.laststate) {
     if (button.pressed) {
-      // Leer y convertir la temperatura
-      temp = analogRead(TEMPERATURE_PIN) * (0.5 / 4095.0) * 100;
+      temp = analogRead(TEMPERATURE_PIN) * ((3.3 / 4095.0) * 100) + 25;
       Serial.print(temp);
       Serial.print("\n");
       
-      // Actualiza el color del LED, mueve el servo y envía la temperatura a Adafruit IO
       updateLedColor(temp);
       updateServo(temp);
-     // temperatureFeed->save(temp);
       
-      // Muestra la temperatura en el display de 7 segmentos
       showTemp = true;
       lastReadTime = millis();
       
-      // Resetear el estado del botón
       button.pressed = false;
     }
   }
 
-  button.laststate = button.pressed;
-  
-  // Mostrar temperatura en el display mientras está dentro del tiempo permitido
-  if (showTemp && (millis() - lastReadTime <= DISPLAY_DURATION)) {
+  if (showTemp && millis() - lastReadTime < DISPLAY_DURATION) {
     displayTemperature(temp);
-  } else {
-    clearDisplay();
-    showTemp = true;
   }
 
+  button.laststate = button.pressed;
+  
   delay(5);
 }
